@@ -104,6 +104,11 @@ class TestRBAC:
 
     def test_token_without_role_is_invalid(self):
         """Token missing role claim should be rejected by get_current_user."""
+        from fastapi.security import HTTPAuthorizationCredentials
+        from app.auth import get_current_user
         token = create_access_token(data={"sub": "user_no_role"})
-        payload = decode_token(token)
-        assert payload.get("role") is None
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        with pytest.raises(HTTPException) as exc_info:
+            get_current_user(credentials)
+        assert exc_info.value.status_code == 401
+        assert "missing required claims" in exc_info.value.detail

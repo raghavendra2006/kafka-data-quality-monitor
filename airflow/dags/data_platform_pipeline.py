@@ -295,19 +295,26 @@ def _validate_data_quality(**kwargs) -> None:
 
 
 # ===================================================================
-# Task: Transform with dbt (includes loading raw data to warehouse)
+# Task: Transform with dbt (load raw to warehouse + run dbt)
 # ===================================================================
-def _transform_load_raw_to_warehouse(**kwargs) -> None:
-    """Load raw Delta Lake data into warehouse staging tables for dbt.
+def _transform_data_dbt(**kwargs) -> None:
+    """Load raw Delta Lake data into warehouse staging tables, then run dbt.
 
-    This runs as part of the transform phase: raw data must be in the warehouse
-    for dbt to read from the `raw` schema and create mart models.
-    Idempotent: uses TRUNCATE + INSERT.
+    This task does two things in sequence:
+    1. Loads raw data from Delta Lake (MinIO) into the warehouse `raw` schema
+    2. Runs dbt to transform raw data into the `fact_daily_sales` mart
+
+    Idempotent: uses TRUNCATE + INSERT for raw data, dbt handles its own idempotency.
     """
     import pandas as pd
     import psycopg2
+    import subprocess
     from deltalake import DeltaTable
 
+    # ------------------------------------------------------------------
+    # Step 1: Load raw data from Delta Lake to warehouse staging tables
+    # ------------------------------------------------------------------
+    logger.info("Step 1/2: Loading raw data to warehouse staging tables...")
     logger.info("Connecting to warehouse at %s:%s", WAREHOUSE_DB["host"], WAREHOUSE_DB["port"])
     conn = psycopg2.connect(**WAREHOUSE_DB)
     conn.autocommit = True
@@ -370,7 +377,6 @@ def _transform_load_raw_to_warehouse(**kwargs) -> None:
                 logger.warning("No data found for raw.%s — skipping", table_name)
                 continue
 
-            # Use COPY-style bulk insert via execute_values for performance
             cols = df.columns.tolist()
             col_str = ", ".join([f'"{c}"' for c in cols])
             template = "(" + ", ".join(["%s"] * len(cols)) + ")"
@@ -386,6 +392,34 @@ def _transform_load_raw_to_warehouse(**kwargs) -> None:
         conn.close()
 
     logger.info("All raw data loaded to warehouse staging tables.")
+
+    # ------------------------------------------------------------------
+    # Step 2: Run dbt transformations
+    # ------------------------------------------------------------------
+    logger.info("Step 2/2: Running dbt transformations...")
+    dbt_dir = "/opt/airflow/dbt_project"
+
+    # Run dbt deps (optional, may not have packages.yml)
+    subprocess.run(
+        ["dbt", "deps", "--profiles-dir", ".", "--target", "prod"],
+        cwd=dbt_dir,
+        capture_output=True,
+    )
+
+    # Run dbt models
+    result = subprocess.run(
+        ["dbt", "run", "--profiles-dir", ".", "--target", "prod"],
+        cwd=dbt_dir,
+        capture_output=True,
+        text=True,
+    )
+
+    logger.info("dbt stdout:\n%s", result.stdout)
+    if result.returncode != 0:
+        logger.error("dbt stderr:\n%s", result.stderr)
+        raise RuntimeError(f"dbt run failed with exit code {result.returncode}")
+
+    logger.info("✓ dbt transformations complete.")
 
 
 # ===================================================================
@@ -585,19 +619,9 @@ with DAG(
         python_callable=_validate_data_quality,
     )
 
-    # Transform phase: first load raw to warehouse, then run dbt
-    load_raw_to_warehouse = PythonOperator(
-        task_id="transform_load_staging",
-        python_callable=_transform_load_raw_to_warehouse,
-    )
-
-    run_dbt = BashOperator(
+    transform_data_dbt = PythonOperator(
         task_id="transform_data_dbt",
-        bash_command=(
-            "cd /opt/airflow/dbt_project && "
-            "dbt deps --profiles-dir . --target prod 2>/dev/null; "
-            "dbt run --profiles-dir . --target prod"
-        ),
+        python_callable=_transform_data_dbt,
     )
 
     load_to_warehouse = PythonOperator(
@@ -615,14 +639,14 @@ with DAG(
     #   start
     #   → [ingest_postgres, ingest_api, ingest_files]  (parallel)
     #   → validate_data_quality
-    #   → transform_data_dbt  (includes staging load + dbt run)
-    #   → load_to_warehouse   (verification + indexing)
+    #   → transform_data_dbt
+    #   → load_to_warehouse
     #   → update_data_catalog
     #   → end
     # ---------------------------------------------------------------
     start >> [ingest_postgres, ingest_api, ingest_files]
     [ingest_postgres, ingest_api, ingest_files] >> validate_data_quality
-    validate_data_quality >> load_raw_to_warehouse >> run_dbt
-    run_dbt >> load_to_warehouse
+    validate_data_quality >> transform_data_dbt
+    transform_data_dbt >> load_to_warehouse
     load_to_warehouse >> update_data_catalog
     update_data_catalog >> end

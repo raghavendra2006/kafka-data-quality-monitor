@@ -40,20 +40,20 @@ async def test_health_check():
 # ---------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_sales_endpoint_without_token():
-    """Sales endpoint returns 403 without a token."""
+    """Sales endpoint returns 401 without a token."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/v1/sales/daily")
-    assert resp.status_code == 403
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_reviews_endpoint_without_token():
-    """Reviews endpoint returns 403 without a token."""
+    """Reviews endpoint returns 401 without a token."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/v1/reviews/raw")
-    assert resp.status_code == 403
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio

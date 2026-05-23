@@ -3,13 +3,31 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from .config import settings
 
-security = HTTPBearer()
+
+class OptionalHTTPBearer(HTTPBearer):
+    """Custom HTTPBearer that returns 401 (not 403) when credentials are missing."""
+
+    async def __call__(self, request: Request) -> Optional[HTTPAuthorizationCredentials]:
+        try:
+            credentials = await super().__call__(request)
+            return credentials
+        except HTTPException:
+            # HTTPBearer raises 403 for missing/invalid Authorization header.
+            # The spec requires 401 for missing tokens.
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+
+security = OptionalHTTPBearer()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

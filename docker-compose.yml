@@ -199,6 +199,8 @@ services:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
       postgres-source:
         condition: service_healthy
       postgres-warehouse:
@@ -244,6 +246,12 @@ services:
       airflow-init:
         condition: service_completed_successfully
       redis:
+        condition: service_healthy
+      postgres-source:
+        condition: service_healthy
+      postgres-warehouse:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   # =========================================================

@@ -1,0 +1,441 @@
+version: '3.8'
+
+x-airflow-common: &airflow-common
+  build: ./airflow
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@airflow-postgres:5432/${AIRFLOW_DB_NAME:-airflow}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@airflow-postgres:5432/${AIRFLOW_DB_NAME:-airflow}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-81HqDtbqAywKSOumSha3BhWNOdQ26slT6K0YaXe0yj8=}
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
+    # Source DB
+    SOURCE_DB_HOST: postgres-source
+    SOURCE_DB_PORT: '5432'
+    SOURCE_DB_NAME: ${SOURCE_DB_NAME:-source_db}
+    SOURCE_DB_USER: ${SOURCE_DB_USER:-source_user}
+    SOURCE_DB_PASSWORD: ${SOURCE_DB_PASSWORD:-source_pass}
+    # Warehouse DB
+    WAREHOUSE_DB_HOST: postgres-warehouse
+    WAREHOUSE_DB_PORT: '5432'
+    WAREHOUSE_DB_NAME: ${WAREHOUSE_DB_NAME:-warehouse_db}
+    WAREHOUSE_DB_USER: ${WAREHOUSE_DB_USER:-warehouse_user}
+    WAREHOUSE_DB_PASSWORD: ${WAREHOUSE_DB_PASSWORD:-warehouse_pass}
+    # MinIO
+    MINIO_ENDPOINT: http://minio:9000
+    MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+    MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    AWS_ENDPOINT_URL: http://minio:9000
+    AWS_ALLOW_HTTP: 'true'
+    AWS_S3_ALLOW_UNSAFE_RENAME: 'true'
+    # DataHub
+    DATAHUB_GMS_URL: http://datahub-gms:8080
+    # External APIs
+    FMP_API_KEY: ${FMP_API_KEY:-demo}
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./great_expectations:/opt/airflow/great_expectations
+    - ./dbt_project:/opt/airflow/dbt_project
+    - airflow_logs:/opt/airflow/logs
+  networks:
+    - platform-network
+  depends_on:
+    airflow-postgres:
+      condition: service_healthy
+
+services:
+  # =========================================================
+  # Source Database
+  # =========================================================
+  postgres-source:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${SOURCE_DB_NAME:-source_db}
+      POSTGRES_USER: ${SOURCE_DB_USER:-source_user}
+      POSTGRES_PASSWORD: ${SOURCE_DB_PASSWORD:-source_pass}
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./seeds/source_db:/docker-entrypoint-initdb.d
+      - postgres_source_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-network
+
+  # =========================================================
+  # Data Warehouse
+  # =========================================================
+  postgres-warehouse:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${WAREHOUSE_DB_NAME:-warehouse_db}
+      POSTGRES_USER: ${WAREHOUSE_DB_USER:-warehouse_user}
+      POSTGRES_PASSWORD: ${WAREHOUSE_DB_PASSWORD:-warehouse_pass}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_warehouse_data:/var/lib/postgresql/data
+      - ./backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-network
+
+  # =========================================================
+  # MinIO Data Lake
+  # =========================================================
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-network
+
+  minio-setup:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing myminio/landing-zone;
+      mc mb --ignore-existing myminio/raw-zone;
+      mc mb --ignore-existing myminio/processed-zone;
+      mc mb --ignore-existing myminio/curated-zone;
+      mc cp /seed_files/customer_reviews.csv myminio/landing-zone/customer_reviews.csv;
+      echo 'MinIO buckets created and seed files uploaded.';
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    volumes:
+      - ./seeds/minio_files:/seed_files:ro
+    networks:
+      - platform-network
+
+  # =========================================================
+  # Airflow Metadata Database
+  # =========================================================
+  airflow-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${AIRFLOW_DB_NAME:-airflow}
+      POSTGRES_USER: ${AIRFLOW_DB_USER:-airflow}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow}
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-network
+
+  # =========================================================
+  # Airflow Init (run once)
+  # =========================================================
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: >
+      /bin/bash -c "
+      airflow db migrate &&
+      airflow users create
+        --username $${AIRFLOW_ADMIN_USER:-admin}
+        --password $${AIRFLOW_ADMIN_PASSWORD:-admin}
+        --firstname Admin
+        --lastname User
+        --role Admin
+        --email admin@example.com || true
+      "
+    environment:
+      <<: *airflow-common-env
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+    restart: "no"
+
+  # =========================================================
+  # Airflow Webserver
+  # =========================================================
+  airflow-webserver:
+    <<: *airflow-common
+    command: airflow webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      postgres-source:
+        condition: service_healthy
+      postgres-warehouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # =========================================================
+  # Airflow Scheduler
+  # =========================================================
+  airflow-scheduler:
+    <<: *airflow-common
+    command: airflow scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # =========================================================
+  # Airflow Worker
+  # =========================================================
+  airflow-worker:
+    <<: *airflow-common
+    command: airflow celery worker
+    healthcheck:
+      test: ["CMD-SHELL", "celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d celery@$${HOSTNAME} || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # =========================================================
+  # Redis (Celery Broker)
+  # =========================================================
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-network
+
+  # =========================================================
+  # DataHub Dependencies
+  # =========================================================
+  datahub-zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: echo srvr | nc localhost 2181 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - datahub_zk_data:/var/lib/zookeeper/data
+    networks:
+      - platform-network
+
+  datahub-broker:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      datahub-zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: datahub-zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://datahub-broker:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx256m"
+    healthcheck:
+      test: kafka-broker-api-versions --bootstrap-server localhost:29092 || exit 1
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - datahub_broker_data:/var/lib/kafka/data
+    networks:
+      - platform-network
+
+  datahub-mysql:
+    image: mysql:5.7
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_bin --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DATAHUB_MYSQL_PASSWORD:-datahub}
+      MYSQL_DATABASE: datahub
+    healthcheck:
+      test: mysqladmin ping -h localhost -pdatahub
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    volumes:
+      - datahub_mysql_data:/var/lib/mysql
+    networks:
+      - platform-network
+
+  datahub-elasticsearch:
+    image: elasticsearch:7.10.1
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms256m -Xmx512m
+    healthcheck:
+      test: curl -sS http://localhost:9200/_cluster/health?wait_for_status=yellow || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    volumes:
+      - datahub_es_data:/usr/share/elasticsearch/data
+    networks:
+      - platform-network
+
+  # =========================================================
+  # DataHub GMS (Metadata Service)
+  # =========================================================
+  datahub-gms:
+    image: linkedin/datahub-gms:v0.12.1
+    depends_on:
+      datahub-mysql:
+        condition: service_healthy
+      datahub-elasticsearch:
+        condition: service_healthy
+      datahub-broker:
+        condition: service_healthy
+    environment:
+      DATAHUB_GMS_PORT: 8080
+      EBEAN_DATASOURCE_URL: jdbc:mysql://datahub-mysql:3306/datahub?verifyServerCertificate=false&useSSL=false&useUnicode=yes&characterEncoding=UTF-8
+      EBEAN_DATASOURCE_USERNAME: root
+      EBEAN_DATASOURCE_PASSWORD: ${DATAHUB_MYSQL_PASSWORD:-datahub}
+      EBEAN_DATASOURCE_DRIVER: com.mysql.jdbc.Driver
+      KAFKA_BOOTSTRAP_SERVER: datahub-broker:29092
+      ELASTICSEARCH_HOST: datahub-elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      GRAPH_SERVICE_IMPL: elasticsearch
+      DATAHUB_SERVER_TYPE: quickstart
+      ENTITY_REGISTRY_CONFIG_PATH: /datahub/datahub-gms/resources/entity-registry.yml
+      MAE_CONSUMER_ENABLED: 'true'
+      MCE_CONSUMER_ENABLED: 'true'
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: curl -sS http://localhost:8080/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 15
+      start_period: 90s
+    networks:
+      - platform-network
+
+  # =========================================================
+  # DataHub Frontend
+  # =========================================================
+  datahub-frontend:
+    image: linkedin/datahub-frontend-react:v0.12.1
+    depends_on:
+      datahub-gms:
+        condition: service_healthy
+    environment:
+      DATAHUB_GMS_HOST: datahub-gms
+      DATAHUB_GMS_PORT: 8080
+      DATAHUB_SECRET: ${DATAHUB_SECRET:-YouKnowNothing}
+      DATAHUB_APP_VERSION: "1.0"
+      DATAHUB_PLAY_MEM_BUFFER_SIZE: 10MB
+      DATAHUB_ANALYTICS_ENABLED: 'false'
+      AUTH_OIDC_ENABLED: 'false'
+      JAVA_OPTS: "-Xms128m -Xmx256m"
+    ports:
+      - "9002:9002"
+    healthcheck:
+      test: curl -sS http://localhost:9002/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - platform-network
+
+  # =========================================================
+  # Data Access API
+  # =========================================================
+  data-api:
+    build: ./data_api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${WAREHOUSE_DB_USER:-warehouse_user}:${WAREHOUSE_DB_PASSWORD:-warehouse_pass}@postgres-warehouse:5432/${WAREHOUSE_DB_NAME:-warehouse_db}
+      DATABASE_URL_SYNC: postgresql://${WAREHOUSE_DB_USER:-warehouse_user}:${WAREHOUSE_DB_PASSWORD:-warehouse_pass}@postgres-warehouse:5432/${WAREHOUSE_DB_NAME:-warehouse_db}
+      JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_change_me_in_production}
+      JWT_ALGORITHM: HS256
+    depends_on:
+      postgres-warehouse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - platform-network
+
+volumes:
+  postgres_source_data:
+  postgres_warehouse_data:
+  minio_data:
+  airflow_postgres_data:
+  airflow_logs:
+  datahub_mysql_data:
+  datahub_es_data:
+  datahub_zk_data:
+  datahub_broker_data:
+
+networks:
+  platform-network:
+    driver: bridge

@@ -1,0 +1,12 @@
+data_platform:
+  target: prod
+  outputs:
+    prod:
+      type: postgres
+      host: "{{ env_var('WAREHOUSE_DB_HOST', 'postgres-warehouse') }}"
+      port: "{{ env_var('WAREHOUSE_DB_PORT', '5432') | int }}"
+      user: "{{ env_var('WAREHOUSE_DB_USER', 'warehouse_user') }}"
+      pass: "{{ env_var('WAREHOUSE_DB_PASSWORD', 'warehouse_pass') }}"
+      dbname: "{{ env_var('WAREHOUSE_DB_NAME', 'warehouse_db') }}"
+      schema: public
+      threads: 2

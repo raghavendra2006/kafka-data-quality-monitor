@@ -1,0 +1,38 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Backups
+backups/*.sql
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+postgres_data/
+
+# Great Expectations
+great_expectations/uncommitted/
+great_expectations/checkpoints/.ge_store_backend_id
+
+# dbt
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_project/logs/
+
+# Airflow
+airflow/logs/
+airflow/plugins/__pycache__/

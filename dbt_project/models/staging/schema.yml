@@ -1,0 +1,65 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: products
+        description: "Raw products data from source database"
+        columns:
+          - name: product_id
+            tests:
+              - not_null
+              - unique
+          - name: name
+          - name: category
+          - name: price
+      - name: sales
+        description: "Raw sales transactions from source database"
+        columns:
+          - name: sale_id
+            tests:
+              - not_null
+              - unique
+          - name: product_id
+            tests:
+              - not_null
+          - name: sale_date
+          - name: quantity
+          - name: total_amount
+      - name: reviews
+        description: "Raw customer reviews from CSV file"
+        columns:
+          - name: review_id
+            tests:
+              - not_null
+          - name: product_id
+          - name: rating
+          - name: review_text
+
+models:
+  - name: stg_sales
+    description: "Cleaned sales data"
+    columns:
+      - name: sale_id
+        tests:
+          - not_null
+          - unique
+      - name: product_id
+        tests:
+          - not_null
+
+  - name: stg_products
+    description: "Cleaned products data"
+    columns:
+      - name: product_id
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_reviews
+    description: "Cleaned reviews data"
+    columns:
+      - name: review_id
+        tests:
+          - not_null

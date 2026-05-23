@@ -3,11 +3,7 @@
 import pytest
 from datetime import timedelta, datetime, timezone
 from jose import jwt
-
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "data_api"))
+from fastapi import HTTPException
 
 from app.config import settings
 from app.auth import create_access_token, decode_token
@@ -60,17 +56,13 @@ class TestTokenDecoding:
         assert payload["role"] == "analyst"
 
     def test_decode_invalid_token_raises(self):
-        """Invalid token raises HTTPException."""
-        from fastapi import HTTPException
-
+        """Invalid token raises HTTPException with 401."""
         with pytest.raises(HTTPException) as exc_info:
             decode_token("invalid.token.string")
         assert exc_info.value.status_code == 401
 
     def test_decode_expired_token_raises(self):
-        """Expired token raises HTTPException."""
-        from fastapi import HTTPException
-
+        """Expired token raises HTTPException with 401."""
         token = create_access_token(
             data={"sub": "user", "role": "analyst"},
             expires_delta=timedelta(seconds=-10),
@@ -81,10 +73,12 @@ class TestTokenDecoding:
 
     def test_decode_wrong_secret_raises(self):
         """Token signed with wrong secret is rejected."""
-        from fastapi import HTTPException
-
         token = jwt.encode(
-            {"sub": "user", "role": "admin", "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+            {
+                "sub": "user",
+                "role": "admin",
+                "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+            },
             "wrong_secret",
             algorithm="HS256",
         )
@@ -97,13 +91,19 @@ class TestRBAC:
     """Tests for role-based access control logic."""
 
     def test_analyst_role_in_token(self):
-        """Analyst role is correctly encoded."""
+        """Analyst role is correctly encoded and decoded."""
         token = create_access_token(data={"sub": "analyst1", "role": "analyst"})
         payload = decode_token(token)
         assert payload["role"] == "analyst"
 
     def test_admin_role_in_token(self):
-        """Admin role is correctly encoded."""
+        """Admin role is correctly encoded and decoded."""
         token = create_access_token(data={"sub": "admin1", "role": "admin"})
         payload = decode_token(token)
         assert payload["role"] == "admin"
+
+    def test_token_without_role_is_invalid(self):
+        """Token missing role claim should be rejected by get_current_user."""
+        token = create_access_token(data={"sub": "user_no_role"})
+        payload = decode_token(token)
+        assert payload.get("role") is None

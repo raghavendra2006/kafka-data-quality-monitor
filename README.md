@@ -290,6 +290,39 @@ backups/warehouse_backup_20240115_103000.sql
 
 ---
 
+## 🧪 Running Tests
+
+### Install test dependencies
+
+```bash
+pip install -r tests/requirements-test.txt
+```
+
+### Run the full test suite
+
+```bash
+pytest tests/ -v
+```
+
+### Run specific test categories
+
+```bash
+# Auth tests only
+pytest tests/test_auth.py -v
+
+# API endpoint tests only
+pytest tests/test_api.py -v
+```
+
+Tests cover:
+- JWT token creation, decoding, expiry, and signature validation
+- RBAC role enforcement (analyst vs admin)
+- API endpoint authentication (401/403 responses)
+- Token generation round-trip
+- Health check endpoint
+
+---
+
 ## 📁 Project Structure
 
 ```

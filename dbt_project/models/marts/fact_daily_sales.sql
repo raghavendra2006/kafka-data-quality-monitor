@@ -15,7 +15,7 @@ WITH daily_sales AS (
 product_reviews AS (
     SELECT
         product_id,
-        AVG(rating)::FLOAT AS avg_review_rating
+        ROUND(AVG(rating)::numeric, 2) AS avg_review_rating
     FROM {{ ref('stg_reviews') }}
     GROUP BY product_id
 )
@@ -27,10 +27,9 @@ SELECT
     p.product_category,
     ds.total_quantity_sold,
     ds.total_revenue,
-    COALESCE(pr.avg_review_rating, 0.0) AS avg_review_rating
+    COALESCE(pr.avg_review_rating, 0.0)::float AS avg_review_rating
 FROM daily_sales ds
 JOIN {{ ref('stg_products') }} p
     ON ds.product_id = p.product_id
 LEFT JOIN product_reviews pr
     ON ds.product_id = pr.product_id
-ORDER BY ds.date, ds.product_id

@@ -1,18 +1,17 @@
 """Pydantic response models for the API."""
 
-from datetime import date
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DailySalesItem(BaseModel):
     """Single daily sales record."""
     date: str
     product_name: str
-    product_category: Optional[str] = None
-    total_quantity_sold: Optional[int] = None
+    product_category: str
+    total_quantity_sold: int
     total_revenue: float
-    avg_review_rating: Optional[float] = None
+    avg_review_rating: float = Field(default=0.0)
 
 
 class DailySalesResponse(BaseModel):
@@ -51,4 +50,4 @@ class TokenResponse(BaseModel):
 class TokenRequest(BaseModel):
     """Token generation request."""
     username: str
-    role: str
+    role: str = Field(pattern="^(analyst|admin)$")

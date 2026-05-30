@@ -414,6 +414,7 @@ docker-compose down -v && docker-compose up -d --build
 - Check scheduler logs: `docker-compose logs airflow-scheduler`
 
 ### DataHub not responding?
+- **Known Upstream Bug:** The official `v0.12.1` upgrade image has a known Java ANTLR runtime bug. If `datahub-gms` continuously fails to start because of a missing `datahubpolicyindex_v2` index, it is due to the `datahub-upgrade` container crashing.
 - DataHub takes 2-3 minutes to start
 - Check: `docker-compose logs datahub-gms`
 - Elasticsearch needs time to initialize

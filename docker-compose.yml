@@ -166,13 +166,7 @@ services:
     entrypoint: >
       /bin/bash -c "
       airflow db migrate &&
-      airflow users create
-        --username $${AIRFLOW_ADMIN_USER:-admin}
-        --password $${AIRFLOW_ADMIN_PASSWORD:-admin}
-        --firstname Admin
-        --lastname User
-        --role Admin
-        --email admin@example.com || true
+      airflow users create --username $${AIRFLOW_ADMIN_USER:-admin} --password $${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --role Admin --email admin@example.com || true
       "
     environment:
       <<: *airflow-common-env
@@ -357,6 +351,8 @@ services:
         condition: service_healthy
     environment:
       DATAHUB_GMS_PORT: 8080
+      EBEAN_DATASOURCE_HOST: datahub-mysql:3306
+      EBEAN_DATASOURCE_PORT: 3306
       EBEAN_DATASOURCE_URL: jdbc:mysql://datahub-mysql:3306/datahub?verifyServerCertificate=false&useSSL=false&useUnicode=yes&characterEncoding=UTF-8
       EBEAN_DATASOURCE_USERNAME: root
       EBEAN_DATASOURCE_PASSWORD: ${DATAHUB_MYSQL_PASSWORD:-datahub}
@@ -397,6 +393,7 @@ services:
       DATAHUB_PLAY_MEM_BUFFER_SIZE: 10MB
       DATAHUB_ANALYTICS_ENABLED: 'false'
       AUTH_OIDC_ENABLED: 'false'
+      KAFKA_BOOTSTRAP_SERVER: datahub-broker:29092
       JAVA_OPTS: "-Xms128m -Xmx256m"
     ports:
       - "9002:9002"

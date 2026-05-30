@@ -1,6 +1,12 @@
 -- Mart model: Aggregated daily sales fact table
 -- Joins sales, products, and reviews for analytics
-{{ config(materialized='table') }}
+{{ config(
+    materialized='table',
+    indexes=[
+        {'columns': ['date']},
+        {'columns': ['product_id']}
+    ]
+) }}
 
 WITH daily_sales AS (
     SELECT

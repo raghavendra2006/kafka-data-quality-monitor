@@ -8,8 +8,9 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    pool_size=20,
+    max_overflow=50,
+    pool_recycle=1800,  # Recycle connections after 30 minutes to prevent stale/dropped connections
 )
 
 AsyncSessionLocal = async_sessionmaker(

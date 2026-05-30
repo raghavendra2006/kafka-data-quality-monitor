@@ -384,7 +384,7 @@ def _transform_data_dbt(**kwargs) -> None:
 
             from psycopg2.extras import execute_values
             values = [tuple(row) for row in df.values]
-            execute_values(cur, insert_sql, values, template=template, page_size=500)
+            execute_values(cur, insert_sql, values, template=template, page_size=5000)
             logger.info("Loaded %d rows into raw.%s", len(df), table_name)
 
     finally:
@@ -454,17 +454,6 @@ def _load_to_warehouse(**kwargs) -> None:
         if row_count == 0:
             raise ValueError("fact_daily_sales is EMPTY after dbt run — check model logic")
         logger.info("✓ fact_daily_sales verified: %d rows", row_count)
-
-        # Create indexes for API query performance
-        cur.execute("""
-            CREATE INDEX IF NOT EXISTS idx_fact_daily_sales_date
-            ON fact_daily_sales (date DESC)
-        """)
-        cur.execute("""
-            CREATE INDEX IF NOT EXISTS idx_fact_daily_sales_product
-            ON fact_daily_sales (product_id)
-        """)
-        logger.info("✓ Indexes created on fact_daily_sales")
 
         # Update query planner statistics
         cur.execute("ANALYZE fact_daily_sales;")

@@ -338,6 +338,28 @@ services:
       - platform-network
 
   # =========================================================
+  # DataHub Upgrade (Init Service)
+  # =========================================================
+  datahub-upgrade:
+    image: acryldata/datahub-upgrade:v0.12.1
+    environment:
+      EBEAN_DATASOURCE_HOST: datahub-mysql:3306
+      EBEAN_DATASOURCE_URL: jdbc:mysql://datahub-mysql:3306/datahub?verifyServerCertificate=false&useSSL=false&useUnicode=yes&characterEncoding=UTF-8
+      EBEAN_DATASOURCE_USERNAME: root
+      EBEAN_DATASOURCE_PASSWORD: ${DATAHUB_MYSQL_PASSWORD:-datahub}
+      ELASTICSEARCH_HOST: datahub-elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      KAFKA_BOOTSTRAP_SERVER: datahub-broker:29092
+    command: -u SystemUpdate
+    networks:
+      - platform-network
+    depends_on:
+      datahub-mysql:
+        condition: service_healthy
+      datahub-elasticsearch:
+        condition: service_healthy
+
+  # =========================================================
   # DataHub GMS (Metadata Service)
   # =========================================================
   datahub-gms:

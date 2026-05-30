@@ -157,13 +157,13 @@ start
 validate_data_quality    (Great Expectations on raw sales)
         │
         ▼
-load_to_warehouse        (Load raw data into warehouse staging)
+transform_data_dbt       (Load raw → warehouse staging, then dbt run → fact_daily_sales)
         │
         ▼
-transform_data_dbt       (dbt run → fact_daily_sales)
+load_to_warehouse        (Verify fact table, run ANALYZE)
         │
         ▼
-update_data_catalog      (Push metadata to DataHub)
+update_data_catalog      (Push metadata & lineage to DataHub)
         │
         ▼
       end

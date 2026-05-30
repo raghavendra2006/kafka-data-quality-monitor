@@ -4,19 +4,6 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 
 from app.main import app
-from app.auth import create_access_token
-
-
-@pytest.fixture
-def analyst_token():
-    """Generate a valid analyst JWT token."""
-    return create_access_token(data={"sub": "test_analyst", "role": "analyst"})
-
-
-@pytest.fixture
-def admin_token():
-    """Generate a valid admin JWT token."""
-    return create_access_token(data={"sub": "test_admin", "role": "admin"})
 
 
 # ---------------------------------------------------------------

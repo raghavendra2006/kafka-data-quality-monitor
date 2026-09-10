@@ -1,0 +1,2 @@
+Senior Software Engineer
+We are seeking a Senior Software Engineer with 4+ years of experience building scalable web products. Required: JavaScript, React, Node.js, SQL, Git, REST APIs, and AWS. Candidates must have a bachelor's degree and strong communication. Preferred: TypeScript, Docker, MongoDB, GraphQL, and Agile delivery. You will design APIs, mentor engineers, improve reliability, collaborate with product, and deliver measurable customer outcomes.

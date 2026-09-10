@@ -1,0 +1,1 @@
+const mongoose=require('mongoose'); const schema=new mongoose.Schema({channel:String,userKey:String,filename:String,score:Number,report:String,failedSends:[Object],createdAt:{type:Date,default:Date.now}},{timestamps:true}); module.exports=mongoose.models.AnalysisLog||mongoose.model('AnalysisLog',schema);

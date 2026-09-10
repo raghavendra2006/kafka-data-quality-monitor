@@ -1,0 +1,1 @@
+const {parseResume}=require('../../src/services/resumeParser');test('parses text resume',async()=>{const r=await parseResume('Jane Doe\n5 years experience\nBachelor of Science\nJavaScript React','resume.txt');expect(r.yearsExperience).toBe(5);expect(r.degreeLevel).toBe(2)});test('rejects empty input',async()=>{await expect(parseResume('','resume.txt')).rejects.toThrow()});

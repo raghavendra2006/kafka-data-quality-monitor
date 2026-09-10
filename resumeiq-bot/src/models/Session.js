@@ -1,0 +1,1 @@
+const mongoose=require('mongoose'); const schema=new mongoose.Schema({key:{type:String,unique:true,index:true},state:{type:String,default:'new'},jobDescription:String,jd:Object,lastAnalysis:String,lastFilename:String,files:[Object],updatedAt:{type:Date,default:Date.now,expires:86400}},{timestamps:true}); module.exports=mongoose.models.Session||mongoose.model('Session',schema);

@@ -1,2 +1,0 @@
-const mongoose=require('mongoose'); const {env}=require('./env'); const {withRetry}=require('../services/retryHandler');
-async function connectDatabase(){if(!env.mongoUri||env.mongoUri.includes('your_'))return null;return withRetry(()=>mongoose.connect(env.mongoUri,{serverSelectionTimeoutMS:3000}),{maxRetries:3,baseDelay:500})} async function disconnectDatabase(){if(mongoose.connection.readyState)return mongoose.disconnect()} module.exports={connectDatabase,disconnectDatabase};
